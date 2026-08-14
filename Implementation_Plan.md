@@ -1,4 +1,4 @@
-CAREOON — Final Architecture & Implementation Plan
+# CAREOON — Final Architecture & Implementation Plan
 
 Version: 2.1 (Approved Base + 6 Strategic Corrections Applied)
 
@@ -150,6 +150,7 @@ Customer Request
 
 TypeScript Interface (Matching Engine)
 
+```
 // /features/matching/engine.ts
 
 interface MatchingCriteria {
@@ -184,9 +185,11 @@ interface ProviderMatch {
 interface MatchingEngine {
   match(criteria: MatchingCriteria): Promise<ProviderMatch[]>
 }
+```
 
 Scoring Weights — Configurable (NOT hardcoded)
 
+```
 // /config/matching.config.ts
 // V1: static config file — future: DB table matching_configurations
 
@@ -204,6 +207,7 @@ export const MATCHING_CONFIG = {
   newProviderRatingScore: 50,   // neutral score for unreviewed providers
   offerExpiryMinutes: 10,       // how long provider has to accept
 } as const
+```
 
 Future ML signals (acceptance prediction, time-of-day demand, etc.) plug into Step 6 as additional weighted factors — engine interface unchanged.
 
@@ -278,6 +282,7 @@ Google Maps Directions API (ETA)
 
 Haversine (Server-Side — No Google Maps Required)
 
+```
 // /utils/geolocation.ts
 
 export function haversineDistance(
@@ -294,6 +299,7 @@ export function haversineDistance(
     Math.sin(dLng / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
+```
 
 Google Maps API Key only required for address autocomplete (Planned). Distance matching works immediately without it.
 
@@ -303,6 +309,7 @@ CORRECTION 3 — Availability Engine: Time-Window + Conflict Rules
 
 Booking Time Model (corrected)
 
+```
 // bookings table — corrected fields:
 interface BookingTimeWindow {
   requested_start_time: Date     // customer's requested start
@@ -312,6 +319,7 @@ interface BookingTimeWindow {
   provider_effective_start: Date // when provider needs to leave
   // = requested_start_time - travel_buffer
 }
+```
 
 Availability Engine Rules (Explicit)
 
@@ -341,6 +349,7 @@ Rule 5 — Offer Window:
 
 Database: Availability Conflict Check (SQL)
 
+```
 -- Check if provider has conflicting confirmed booking
 SELECT COUNT(*) FROM bookings
 WHERE provider_id = $provider_id
@@ -349,9 +358,11 @@ WHERE provider_id = $provider_id
   )
   AND requested_start_time < $requested_end_time
   AND requested_end_time   > $requested_start_time
+```
 
 Updated bookings table fields (delta from previous plan)
 
+```
 -- Additional fields added to bookings table:
 requested_start_time    TIMESTAMPTZ NOT NULL
 requested_end_time      TIMESTAMPTZ NOT NULL   -- computed: start + duration
@@ -359,6 +370,7 @@ duration_minutes        INTEGER NOT NULL
 travel_buffer_minutes   INTEGER DEFAULT 0
 provider_effective_start TIMESTAMPTZ           -- when provider leaves
 scheduled_at            TIMESTAMPTZ            -- kept as canonical field
+```
 
 CORRECTION 4 — Multi-City: Top-Level Core Requirement
 
@@ -467,6 +479,7 @@ STAGE 3: PRODUCTION (Live operations)
 
 Code Boundary Enforcement
 
+```
 // /features/payments/payment.interface.ts
 interface PaymentProvider {
   createOrder(params: CreateOrderParams): Promise<GatewayOrder>
@@ -474,17 +487,22 @@ interface PaymentProvider {
   initiateRefund(params: RefundParams): Promise<RefundResult>
   handleWebhook(payload: unknown, sig: string): Promise<WebhookEvent>
 }
+```
 
+```
 // /features/payments/providers/mock.provider.ts
 // [MOCK] — clearly annotated
 export class MockPaymentProvider implements PaymentProvider {
   // Simulates all states. Never touches real gateway.
   // UI shows: "⚠️ Test Mode — No real payment processed"
 }
+```
 
+```
 // /features/payments/providers/razorpay.provider.ts
 // [REAL] — production implementation
 export class RazorpayProvider implements PaymentProvider { ... }
+```
 
 // Factory — controlled by environment:
 // APP_ENV=development → MockPaymentProvider
@@ -535,10 +553,12 @@ API Response (FAST — no downstream processing in request)
 
 Switching from Sync → Async: ONE change
 
+```
 // /lib/events/event-bus.interface.ts
 interface EventBus {
   publish(event: DomainEvent): Promise<void>
 }
+```
 
 // V1: SyncEventBus — processes in same request
 // Production: OutboxWorkerEventBus — DB insert only, worker processes
@@ -998,322 +1018,4 @@ Admin only
 
 commission_configurations, pricing_configurations, audit_logs, domain_events
 
-admin/super_admin
-
-Write-once
-
-reviews
-
-customer can insert (once per booking), admin can update
-
-H.3 Payment Security
-
-idempotency_key UNIQUE on payments — no double-charge
-
-CAPTURED status only set via webhook handler (server-side)
-
-RAZORPAY_WEBHOOK_SECRET verified via HMAC on every webhook
-
-SUPABASE_SERVICE_ROLE_KEY — server-only, never in client bundle
-
-Client-provided amounts are NEVER trusted — always server-calculated
-
-H.4 Document Security
-
-Provider docs → private R2 bucket
-
-Access via StorageProvider.getSignedUrl() with 5-min TTL
-
-Only PROVIDER (own) or ADMIN/SUPER_ADMIN can request signed URL
-
-Object key stored in DB — direct URL never exposed
-
-I. V1 SCOPE — 2-Day Working Vertical Slice
-
-Priority 1: End-to-End Flow Working
-
-Customer enters location (lat/lng)
-        ↓
-Selects service (Nursing) + requirement (Injection)
-        ↓
-Selects date + time window
-        ↓
-Matching Engine runs:
-  - Eligibility filter
-  - Availability + time-window check
-  - Haversine distance
-  - Deterministic weighted ranking
-        ↓
-Recommended providers displayed (with scores)
-        ↓
-Customer selects provider → Booking REQUESTED
-        ↓
-BOOKING_CREATED event → provider offered
-        ↓
-Provider portal: sees request → ACCEPTS
-        ↓
-Booking → ACCEPTED
-        ↓
-Provider: ON_THE_WAY → ARRIVED → SERVICE_STARTED → SERVICE_COMPLETED
-        ↓
-[MOCK] Payment flow → CAPTURED
-        ↓
-Commission calculated (DB-driven) → Settlement record created
-        ↓
-Customer submits review → Provider rating updated
-        ↓
-Booking → REVIEWED ✅
-
-Priority 2: Foundation All Built
-
-Module
-
-V1
-
-28-table DB schema
-
-✅ Migrated
-
-Auth (email/password)
-
-✅
-
-Design System (all components)
-
-✅
-
-Public website (all pages)
-
-✅
-
-Customer portal
-
-✅
-
-Provider portal
-
-✅
-
-Admin dashboard
-
-✅
-
-Matching Engine (deterministic)
-
-✅
-
-Booking state machine
-
-✅
-
-Payment (Mock)
-
-✅ [MOCK]
-
-Commission + Settlement logic
-
-✅
-
-In-app notifications
-
-✅
-
-Audit logs
-
-✅
-
-EventBus (Sync V1)
-
-✅
-
-Multi-city (Sangli seeded)
-
-✅
-
-Haversine distance
-
-✅
-
-Documentation
-
-✅
-
-Clearly Marked [PLANNED] in V1:
-
-[PLANNED] Google Maps autocomplete
-[PLANNED] Firebase Push Notifications
-[PLANNED] Resend Email
-[PLANNED] SMS
-[PLANNED] Live provider GPS tracking
-[PLANNED] Razorpay real payments (Pilot stage)
-[PLANNED] Async Outbox Worker
-[PLANNED] Flutter Mobile App (Phase 8)
-[PLANNED] Redis (Phase 9)
-[PLANNED] Settlement payouts
-[PLANNED] PostGIS geofencing
-[PLANNED] Advanced ML matching
-
-J. FUTURE SCALE SCOPE
-
-Capability
-
-Trigger
-
-Implementation
-
-Async Outbox Worker
-
-Cron latency unacceptable
-
-Dedicated Node process + domain_events outbox
-
-Redis caching
-
-City/service catalogue read bottleneck
-
-Upstash Redis
-
-Redis rate limiting
-
-Auth abuse / matching hammering
-
-Redis token bucket
-
-Redis Streams
-
-Domain event throughput at scale
-
-Replace SyncEventBus impl
-
-PostGIS
-
-Hundreds of providers per city, complex polygons
-
-ST_DWithin queries
-
-ML Matching
-
-Scoring signals too complex for deterministic
-
-ML model behind MatchingEngine interface
-
-Read replicas
-
-DB read bottleneck
-
-Supabase read replicas
-
-Dedicated Worker cluster
-
-Worker volume outgrows Vercel Cron
-
-Docker + Redis queue
-
-Multi-region
-
-Multi-country expansion
-
-Vercel Edge + distributed DB
-
-Analytics pipeline
-
-Ops visibility at scale
-
-Separate analytics DB / warehouse
-
-Environment Variables (Complete + Documented)
-
-# ─── Supabase ──────────────────────────────────────────────────────────────
-NEXT_PUBLIC_SUPABASE_URL=            # Project URL — safe for client
-NEXT_PUBLIC_SUPABASE_ANON_KEY=       # Anon key — safe for client (RLS enforced)
-SUPABASE_SERVICE_ROLE_KEY=           # BYPASS RLS — SERVER ONLY, NEVER client
-
-# ─── Cloudflare R2 ─────────────────────────────────────────────────────────
-R2_ACCOUNT_ID=                       # CF account ID
-R2_ACCESS_KEY_ID=                    # R2 API token key ID
-R2_SECRET_ACCESS_KEY=                # R2 API token secret
-R2_BUCKET_NAME=                      # Private bucket (documents)
-R2_PUBLIC_BUCKET_NAME=               # Public bucket (avatars, service images)
-R2_PUBLIC_URL=                       # Public CDN base URL
-
-# ─── Razorpay ──────────────────────────────────────────────────────────────
-RAZORPAY_KEY_ID=                     # Server: order creation
-RAZORPAY_KEY_SECRET=                 # Server: signature verification
-NEXT_PUBLIC_RAZORPAY_KEY_ID=         # Client: checkout SDK init (public key only)
-RAZORPAY_WEBHOOK_SECRET=             # Webhook HMAC verification
-
-# ─── Firebase FCM ──────────────────────────────────────────────────────────
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
-FIREBASE_SERVICE_ACCOUNT_JSON=       # Server FCM — stringified JSON, NEVER client
-
-# ─── Google Maps ───────────────────────────────────────────────────────────
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=     # Restrict to allowed origins in GCP console
-# NOTE: Distance calculation (Haversine) works without this key
-# This key is only required for address autocomplete [PLANNED]
-
-# ─── Resend (Email) ────────────────────────────────────────────────────────
-RESEND_API_KEY=                      # [PLANNED Pilot]
-RESEND_FROM_EMAIL=                   # e.g. hello@careoon.com
-
-# ─── App ───────────────────────────────────────────────────────────────────
-NEXT_PUBLIC_APP_URL=                 # https://careoon.com (or localhost:3000)
-NEXT_PUBLIC_APP_NAME=Careoon
-NEXT_PUBLIC_APP_ENV=development      # development | staging | production
-
-# ─── Cron Security ─────────────────────────────────────────────────────────
-CRON_SECRET=                         # Bearer token — Vercel passes in cron requests
-
-# ─── Logging ───────────────────────────────────────────────────────────────
-LOG_LEVEL=info                       # debug | info | warn | error
-
-Execution Order (29 Steps)
-
-Foundation Block (Phase 1)
-
- 1. Initialize Next.js 14 (App Router, TypeScript, Tailwind)
- 2. Install all dependencies
- 3. Configure Tailwind — Careoon design tokens
- 4. Create full directory tree + barrel files
- 5. Create .env.example + .gitignore + README
- 6. Set up Supabase clients (browser + server + admin)
- 7. Create all TypeScript types (28 tables)
- 8. Create constants (states, roles, events, errors)
- 9. Create error handling + structured logging
-10. Write database migrations (001_enums → 012_triggers)
-11. Write seed data (cities, services, dev users)
-12. Build Careoon Design System (all UI components)
-13. Build auth foundation (register, login, middleware, hooks)
-14. Build repository layer (all repos)
-15. Build domain service layer (all services)
-16. Build EventBus abstraction (SyncEventBus V1)
-17. Build StorageProvider abstraction (R2 + mock)
-18. Build PaymentProvider abstraction (Mock + Razorpay stub)
-19. ✅ npm run build → fix all errors
-
-Core Marketplace Block (Phase 2)
-
-20. Build public website (homepage + all pages)
-21. Build geography features (city/area/address + location detection)
-22. Build service catalogue (categories + services + requirements)
-23. Build provider portal (profile + capabilities + availability)
-24. Build Matching Engine (eligibility + availability + ranking)
-25. Build booking engine (state machine + assignment flow)
-26. Build customer booking flow (location → match → book)
-27. Build admin dashboard (all sections)
-28. Seed Sangli city + nursing services + test providers
-29. ✅ End-to-end test: customer → match → book → accept → complete → review
-    ✅ npm run build → 0 errors
-    ✅ npx tsc --noEmit → 0 errors
-
-Build Verification
-
-npm run build       # 0 build errors — mandatory
-npx tsc --noEmit    # 0 TypeScript errors — mandatory (strict mode)
-npm run lint        # 0 lint errors — mandatory
-
-This document is the Careoon engineering source of truth.
-No code is written until this plan is explicitly approved.
+...
