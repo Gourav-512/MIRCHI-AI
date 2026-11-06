@@ -106,7 +106,7 @@ flowchart TD
 
 ---
 
-## ७. लाईव्ह टेस्टिंग क्रेडेंशियल्स (Testing Guide for Ma'am)
+## ७. लाईव्ह टेस्टिंग क्रेडेंशियल्स (Testing Guide)
 
 ### अ. ॲडमिन पॅनल (Admin Operations Console)
 - **थेट लिंक:** [careoon-kappa.vercel.app/admin/login](https://careoon-kappa.vercel.app/admin/login)
